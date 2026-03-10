@@ -9,7 +9,7 @@ from pathlib import Path
 import validators
 from openai import OpenAI
 
-from Code.GUI.logger_setup import logger
+from Code.local_models.logger_setup import logger
 from Code.local_models.dataclass import PathConfig, RunConfig
 
 api_key = os.getenv("MY_API_KEY")
@@ -37,7 +37,7 @@ def prompt_llm_local(main_config):
 
 
 # === FILE UTILS ===
-def append_to_jsonl_file(file_path, new_data):
+def write_to_jsonl_file(file_path, new_data):
     with open(file_path, 'w', encoding='utf-8') as file:
         file.write(json.dumps(new_data) + '\n')
 
@@ -47,18 +47,6 @@ def remove_json_delimiters(s: str):
     s = re.sub(r"^```(?:json)?\s*", "", s)
     s = re.sub(r"\s*```$", "", s)
     return s.strip()
-
-
-def read_first_n_subjects(subject_queue, n):
-    if n <= 0:
-        return []  # return empty list for non-positive n
-    return subject_queue[:n]
-
-
-def delete_first_n_subjects(subject_queue, n):
-    if n <= 0 or n >= len(subject_queue):
-        return []
-    return subject_queue[n:]
 
 
 def define_file_paths(run_dir):
@@ -89,7 +77,8 @@ def get_triples(
         'Given a subject entity, return all facts that you know '
         'for the subject as a list of subject, predicate, object '
         'triples. The number of facts may be very high, between '
-        f'{main_config.min_triples} to {main_config.max_triples} or more, for very popular '
+        f'{main_config.min_triples} to {main_config.max_triples} '
+        'or more, for very popular '
         'subjects. For less popular subjects, the number of facts '
         'can be very low, like 5 or 10.\n\n'
         'Important: \n- If you don\'t know the subject, return an '
@@ -122,7 +111,7 @@ def get_triples(
                 "error": str(e),
                 "line": str(output_string)
             }
-            append_to_jsonl_file(path_config.parse_errors_path, error_data)
+            write_to_jsonl_file(path_config.parse_errors_path, error_data)
             result_queue.put([])
             logger.warning(f"   Failed to parse JSON for: {subject}")
     except Exception as e:
@@ -193,7 +182,7 @@ def is_literal(o, path_config, main_config):
     response = prompt_llm_local(main_config)
     result = response.strip().lower()
     if result == 'true':
-        append_to_jsonl_file(path_config.not_ne_path, {'text': o})
+        write_to_jsonl_file(path_config.not_ne_path, {'text': o})
         return True
     return result != 'false'
 
@@ -259,7 +248,7 @@ def main(main_config: RunConfig):
     processed_subjects = []  # initially empty
     for i in range(max_iterations):
         new_subjects_from_objects = []
-        new_subjects = read_first_n_subjects(subject_queue, nthreads)
+        new_subjects = subject_queue[:nthreads]
 
         if len(new_subjects) == 0:
             logger.info("No more subjects in queue. Exiting loop.")
@@ -309,7 +298,10 @@ def main(main_config: RunConfig):
                 processed_subjects, new_subjects,
                 path_config.processed_subjects_path
             )
-            subject_queue = delete_first_n_subjects(subject_queue, nthreads)
+            if nthreads < len(subject_queue):
+                subject_queue = subject_queue[nthreads:]
+            else:
+                subject_queue = []
 
             # total_nodes = getTotalNodeCount()
             # limit = 300
@@ -325,10 +317,10 @@ def main(main_config: RunConfig):
                 subject_queue, new_subjects_from_objects,
                 path_config.subject_queue_path
             )
-            append_to_jsonl_file(
+            write_to_jsonl_file(
                 path_config.subject_queue_path, subject_queue
             )
-            append_to_jsonl_file(
+            write_to_jsonl_file(
                 path_config.processed_subjects_path, processed_subjects
             )
 
@@ -349,16 +341,17 @@ def main(main_config: RunConfig):
                 len(processed_subjects) >= main_config.num_entities
             ):
                 logger.info(
-                    f"Reached target of {main_config.num_entities} processed entities. "
-                    f"Stopping process."
+                    f"Reached target of {main_config.num_entities} "
+                    "processed entities. Stopping process."
                 )
                 break
-            # Warning: This time-based termination is not exact, as threads will
-            # only check the time condition after they finish processing current subject.
+            # Warning: This time-based termination is not exact, as threads
+            # will only check the time condition after they finish processing
+            # current subject.
             if main_config.end_time is not None and time.time() >= main_config.end_time:
                 logger.info(
-                    f"Reached runtime limit of {main_config.termination} minutes. "
-                    f"Stopping process."
+                    f"Reached runtime limit of {main_config.termination} "
+                    "minutes. Stopping process."
                 )
                 break
             time.sleep(1)
