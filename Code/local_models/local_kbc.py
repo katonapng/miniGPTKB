@@ -9,8 +9,8 @@ from pathlib import Path
 import validators
 from openai import OpenAI
 
-from Code.local_models.logger_setup import logger
 from Code.local_models.dataclass import PathConfig, RunConfig
+from Code.local_models.logger_setup import logger
 
 api_key = os.getenv("MY_API_KEY")
 if api_key is None:
@@ -49,22 +49,19 @@ def remove_json_delimiters(s: str):
     return s.strip()
 
 
-def define_file_paths(run_dir):
-    timestamp_dir = run_dir / f"run-{time.strftime('%Y%m%d_%H%M%S')}"
-    os.makedirs(timestamp_dir, exist_ok=True)
-    subject_queue_path = timestamp_dir / "subjectQueue.json"
-    processed_subjects_path = timestamp_dir / "processedSubjects.json"
-    triples_output_path = timestamp_dir / "triples.jsonl"
-    parse_errors_path = timestamp_dir / "batchResultParseErrors.jsonl"
-    not_ne_path = timestamp_dir / "notNE.jsonl"
+def define_file_paths(run_dir: str, topic: str) -> dict:
+    timestamp_dir = Path(run_dir) / f"{topic}_{time.strftime('%Y%m%d_%H%M%S')}"
+    timestamp_dir.mkdir(parents=True, exist_ok=True)
 
-    return (
-        subject_queue_path,
-        processed_subjects_path,
-        triples_output_path,
-        parse_errors_path,
-        not_ne_path
-    )
+    file_paths = {
+        "subject_queue": timestamp_dir / "subjectQueue.json",
+        "processed_subjects": timestamp_dir / "processedSubjects.json",
+        "triples_output": timestamp_dir / "triples.jsonl",
+        "parse_errors": timestamp_dir / "batchResultParseErrors.jsonl",
+        "not_ne": timestamp_dir / "notNE.jsonl",
+    }
+
+    return file_paths
 
 
 # === MAIN FUNCTION: TRIPLE EXTRACTION ===
@@ -209,12 +206,6 @@ def get_total_node_count(
 
 
 def process_arguments(config: RunConfig):
-    try:
-        config.dir = Path(config.dir)
-    except Exception as e:
-        logger.error(f"Invalid directory path: {config.dir}. Error: {e}")
-        return
-
     if not validators.url(config.url):
         logger.error(f"Invalid URL: {config.url}")
         return
@@ -239,7 +230,9 @@ def main(main_config: RunConfig):
         return
 
     try:
-        path_config = PathConfig(*define_file_paths(main_config.dir))
+        path_config = PathConfig(
+            *define_file_paths(main_config.dir, main_config.topic)
+        )
     except Exception as e:
         logger.error(f"Failed to set up file paths: {e}")
         return
