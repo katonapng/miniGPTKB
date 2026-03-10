@@ -1,6 +1,6 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from Code.GUI.UI.window import MainWindow
+from GUI.UI.window import MainWindow
 
 
 def main():

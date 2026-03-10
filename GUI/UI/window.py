@@ -4,13 +4,13 @@ from threading import Thread
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFileDialog,
-                               QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                               QPushButton, QRadioButton, QSlider, QTextEdit,
-                               QVBoxLayout, QWidget)
+                               QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+                               QMainWindow, QPushButton, QRadioButton, QSlider,
+                               QTextEdit, QVBoxLayout, QWidget)
 
-from Code.GUI.backend.runner import run_command
-from Code.GUI.logger_setup import logger
 from Code.local_models.dataclass import RunConfig
+from Code.local_models.logger_setup import logger
+from GUI.backend.runner import run_command
 
 
 class QtLogHandler(logging.Handler, QObject):
@@ -28,12 +28,13 @@ class QtLogHandler(logging.Handler, QObject):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Run miniGPTKB Command")
-        self.setMinimumSize(500, 400)
+        self.setWindowTitle("Run miniGPTKB")
+        self.setMinimumSize(600, 400)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        controls_layout = QGridLayout()
 
         # ---- Directory input ----
         self.dir_label = QLabel("Directory to save results:")
@@ -90,7 +91,9 @@ class MainWindow(QMainWindow):
         self.button_group.setExclusive(True)
 
         # ---- Triples slider ----
-        self.slider_label = QLabel("Desired # of Triples:")
+        self.slider_label = QLabel(
+            "Desired # of Triples: (*LLMs sometimes ignore given range)"
+        )
         # self.triples_label = QLabel()
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setMinimum(0)
@@ -125,19 +128,20 @@ class MainWindow(QMainWindow):
         self.qt_handler.log_signal.connect(self.output_box.append)
 
         # Add widgets to main layout
-        layout.addLayout(dir_layout)
-        layout.addWidget(self.url_label)
-        layout.addWidget(self.url_input)
-        layout.addWidget(self.model_label)
-        layout.addWidget(self.topic_label)
-        layout.addWidget(self.topic_input)
-        layout.addWidget(self.seed_label)
-        layout.addWidget(self.seed_input)
-        layout.addWidget(self.slider_label)
-        layout.addWidget(self.slider)
-        layout.addLayout(tick_layout)
-        layout.addWidget(self.options_label)
+        controls_layout.addLayout(dir_layout, 0, 0)
+        controls_layout.addWidget(self.url_label, 1, 0)
+        controls_layout.addWidget(self.url_input, 2, 0)
+        controls_layout.addWidget(self.model_label, 3, 0)
+        controls_layout.addWidget(self.topic_label, 4, 0)
+        controls_layout.addWidget(self.topic_input, 5, 0)
+        controls_layout.addWidget(self.seed_label, 6, 0)
+        controls_layout.addWidget(self.seed_input, 7, 0)
+        controls_layout.addWidget(self.slider_label, 8, 0)
+        controls_layout.addWidget(self.slider, 9, 0)
+        controls_layout.addLayout(tick_layout, 10, 0)
+        controls_layout.addWidget(self.options_label, 11, 0)
 
+        start_row = 12
         for i, (label, placeholder) in enumerate(termination_options):
             row = QHBoxLayout()
 
@@ -154,12 +158,22 @@ class MainWindow(QMainWindow):
 
             row.addWidget(radio)
             row.addWidget(input_field)
-            layout.addLayout(row)
+            controls_layout.addLayout(row, start_row + i, 0, 1, 2)
 
             self.options[label] = (radio, input_field)
 
-        layout.addWidget(self.run_button)
-        layout.addWidget(self.output_box)
+        controls_layout.addWidget(
+            self.run_button, start_row + len(termination_options), 0, 1, 2
+        )
+        controls_layout.addWidget(
+            self.output_box, start_row + len(termination_options) + 1, 0, 1, 2
+        )
+
+        main_layout.addLayout(controls_layout)
+        main_layout.addWidget(self.output_box)
+
+        main_layout.setStretch(0, 1)  # controls
+        main_layout.setStretch(1, 2)  # output box bigger
 
         # ---- Setup logging ----
         logger.addHandler(self.qt_handler)
@@ -191,7 +205,9 @@ class MainWindow(QMainWindow):
         config.seed_entity = self.seed_input.text().strip()
         config.model = self.model_label.currentText().strip()
         config.slider_value = self.slider.value()
-        _, config.min_triples, config.max_triples = self.slider_options[config.slider_value]
+        _, config.min_triples, config.max_triples = self.slider_options[
+            config.slider_value
+        ]
 
         for label, (radio, input_field) in self.options.items():
             if radio.isChecked():
