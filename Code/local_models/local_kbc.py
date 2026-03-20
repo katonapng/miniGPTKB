@@ -1,5 +1,4 @@
 import json
-import os
 import queue
 import re
 import threading
@@ -12,12 +11,6 @@ from openai import OpenAI
 from Code.local_models.dataclass import PathConfig, RunConfig
 from Code.local_models.logger_setup import logger
 
-api_key = os.getenv("MY_API_KEY")
-if api_key is None:
-    logger.error("API key not found! Set MY_API_KEY in environment variables.")
-else:
-    logger.info("API key loaded successfully.")
-
 
 # === CONFIGURATION ===
 max_iterations = 10  # no limits
@@ -27,7 +20,7 @@ nthreads = 5
 
 # === LLM WRAPPER ===
 def prompt_llm_local(main_config):
-    client = OpenAI(base_url=main_config.url, api_key=api_key)
+    client = OpenAI(base_url=main_config.url, api_key=main_config.api_key)
     r = client.chat.completions.create(
         messages=[{"role": "user", "content": main_config.prompt}],
         model=main_config.model,
@@ -49,16 +42,16 @@ def remove_json_delimiters(s: str):
     return s.strip()
 
 
-def define_file_paths(run_dir: str, topic: str) -> dict:
+def define_file_paths(run_dir: str, topic: str):
     timestamp_dir = Path(run_dir) / f"{topic}_{time.strftime('%Y%m%d_%H%M%S')}"
     timestamp_dir.mkdir(parents=True, exist_ok=True)
 
     file_paths = {
-        "subject_queue": timestamp_dir / "subjectQueue.json",
-        "processed_subjects": timestamp_dir / "processedSubjects.json",
-        "triples_output": timestamp_dir / "triples.jsonl",
-        "parse_errors": timestamp_dir / "batchResultParseErrors.jsonl",
-        "not_ne": timestamp_dir / "notNE.jsonl",
+        timestamp_dir / "subject_queue.json",
+        timestamp_dir / "processed_subjects.json",
+        timestamp_dir / "triples.jsonl",
+        timestamp_dir / "batch_result_parse_errors.jsonl",
+        timestamp_dir / "not_ne.jsonl",
     }
 
     return file_paths
@@ -136,12 +129,12 @@ def deduplicate_triples(triples):
     return unique_triples
 
 
-def store_triples(newTriples, triples_output_path):
-    unique_triples = deduplicate_triples(newTriples)
-    dedup_count = len(newTriples) - len(unique_triples)
+def store_triples(new_triples, triples_output_path):
+    unique_triples = deduplicate_triples(new_triples)
+    dedup_count = len(new_triples) - len(unique_triples)
     logger.info(
         f"   Deduplicated {dedup_count} triples "
-        f"(from {len(newTriples)} to {len(unique_triples)})"
+        f"(from {len(new_triples)} to {len(unique_triples)})"
     )
     with open(triples_output_path, 'w', encoding='utf8') as file:
         for obj in unique_triples:
@@ -157,8 +150,8 @@ def append_to_processed_subjects(
     return processed_subjects
 
 
-def append_to_subject_queue(subject_queue, newSubjects, subject_queue_path):
-    subject_queue.extend(newSubjects)
+def append_to_subject_queue(subject_queue, new_subjects, subject_queue_path):
+    subject_queue.extend(new_subjects)
     with open(subject_queue_path, 'w', encoding='utf-8') as file:
         json.dump(subject_queue, file, ensure_ascii=False, indent=2)
     return subject_queue
@@ -340,8 +333,11 @@ def main(main_config: RunConfig):
                 break
             # Warning: This time-based termination is not exact, as threads
             # will only check the time condition after they finish processing
-            # current subject.
-            if main_config.end_time is not None and time.time() >= main_config.end_time:
+            # current subjects.
+            if (
+                main_config.end_time is not None and
+                time.time() >= main_config.end_time
+            ):
                 logger.info(
                     f"Reached runtime limit of {main_config.termination} "
                     "minutes. Stopping process."

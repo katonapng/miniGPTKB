@@ -2,8 +2,8 @@ import logging
 from pathlib import Path
 from threading import Thread
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QObject, QUrl, Qt, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFileDialog,
                                QGridLayout, QHBoxLayout, QLabel, QLineEdit,
                                QMainWindow, QPushButton, QRadioButton,
@@ -31,7 +31,6 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Run miniGPTKB")
-        self.setWindowIcon(QIcon("gptkb.png"))
         self.setMinimumSize(600, 400)
 
         central_widget = QWidget()
@@ -70,6 +69,12 @@ class MainWindow(QMainWindow):
         self.model_label.setEditable(True)
         self.model_label.currentTextChanged.connect(self.update_run_button)
 
+        # ---- API key ----
+        self.api_key_label = QLabel("API Key:")
+        self.api_key_input = QLineEdit()
+        self.api_key_input.setEchoMode(QLineEdit.Password)
+        self.api_key_input.textChanged.connect(self.update_run_button)
+
         # ---- Topic input ----
         self.topic_label = QLabel("Topic:")
         self.topic_input = QLineEdit("Ancient Babylon")
@@ -88,6 +93,14 @@ class MainWindow(QMainWindow):
 
         # ---- Termination options ----
         self.options_label = QLabel("Termination Options:")
+        self.options_info_label = QLabel("❗")
+        self.options_info_label.setToolTip(
+            "Soft limits: Conditions are checked between threads, so "
+            "limits may be exceeded.\n"
+            "Min Entities: Stop once at least this many unique entities "
+            "have been processed.\n"
+            "Runtime: Stop once at least this many minutes have elapsed."
+        )
         self.options = {}
 
         termination_options = [
@@ -96,7 +109,20 @@ class MainWindow(QMainWindow):
         ]
 
         self.button_group = QButtonGroup(self)
-        self.button_group.setExclusive(True)
+        self.button_group.setExclusive(False)
+        self.button_group.buttonClicked.connect(self.handle_button_clicked)
+
+        termination_layout = QHBoxLayout()
+        termination_layout.setSpacing(2)
+        termination_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.options_label.setSizePolicy(
+            QSizePolicy.Maximum, QSizePolicy.Preferred
+        )
+
+        termination_layout.addWidget(self.options_label)
+        termination_layout.addWidget(self.options_info_label)
+        termination_layout.addStretch()
 
         # ---- Triples slider ----
         self.slider_label = QLabel(
@@ -152,20 +178,30 @@ class MainWindow(QMainWindow):
         self.qt_handler.log_signal.connect(self.output_box.append)
 
         # Add widgets to controls layout
-        controls_layout.addLayout(dir_layout, 0, 0)
-        controls_layout.addWidget(self.url_label, 1, 0)
-        controls_layout.addWidget(self.url_input, 2, 0)
-        controls_layout.addWidget(self.model_label, 3, 0)
-        controls_layout.addWidget(self.topic_label, 4, 0)
-        controls_layout.addWidget(self.topic_input, 5, 0)
-        controls_layout.addWidget(self.seed_label, 6, 0)
-        controls_layout.addWidget(self.seed_input, 7, 0)
-        controls_layout.addLayout(slider_layout, 8, 0)
-        controls_layout.addWidget(self.slider, 9, 0)
-        controls_layout.addLayout(tick_layout, 10, 0)
-        controls_layout.addWidget(self.options_label, 11, 0)
+        elements = [
+            ("layout", dir_layout),
+            ("widget", self.url_label),
+            ("widget", self.url_input),
+            ("widget", self.model_label),
+            ("widget", self.api_key_label),
+            ("widget", self.api_key_input),
+            ("widget", self.topic_label),
+            ("widget", self.topic_input),
+            ("widget", self.seed_label),
+            ("widget", self.seed_input),
+            ("layout", slider_layout),
+            ("widget", self.slider),
+            ("layout", tick_layout),
+            ("layout", termination_layout),
+        ]
 
-        start_row = 12
+        for row, (kind, item) in enumerate(elements):
+            if kind == "widget":
+                controls_layout.addWidget(item, row, 0)
+            else:
+                controls_layout.addLayout(item, row, 0)
+
+        start_row = len(elements)
         for i, (label, placeholder) in enumerate(termination_options):
             row = QHBoxLayout()
 
@@ -211,6 +247,11 @@ class MainWindow(QMainWindow):
     #         f"{label} ({min_triples}-{max_triples} triples)"
     #     )
 
+    def handle_button_clicked(self, button):
+        for btn in self.button_group.buttons():
+            if btn != button:
+                btn.setChecked(False)
+
     def update_run_button(self):
         self.run_button.setEnabled(self.check_arguments())
 
@@ -247,6 +288,7 @@ class MainWindow(QMainWindow):
         config.topic = self.topic_input.text().strip()
         config.seed_entity = self.seed_input.text().strip()
         config.model = self.model_label.currentText().strip()
+        config.api_key = self.api_key_input.text().strip()
         config.slider_value = self.slider.value()
         _, config.min_triples, config.max_triples = self.slider_options[
             config.slider_value
@@ -269,11 +311,10 @@ class MainWindow(QMainWindow):
             )
 
             try:
-                result = run_command(config)
+                run_command(config)
                 logger.info("Command executed successfully.")
-
-                self.output_box.append("\n=== Final Result ===")
-                self.output_box.append(result)
+                folder_path = self.dir_input.text().strip()
+                QDesktopServices.openUrl(QUrl.fromLocalFile(folder_path))
             except Exception as e:
                 logger.error(f"Error executing command: {e}")
 

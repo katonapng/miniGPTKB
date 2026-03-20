@@ -3,11 +3,11 @@ from typing import Optional
 
 
 @dataclass
-@dataclass
 class RunConfig:
     dir: Optional[str] = None
     url: Optional[str] = None
     model: Optional[str] = None
+    api_key: Optional[str] = None
     topic: Optional[str] = None
     prompt: Optional[str] = None
     seed_entity: Optional[str] = None
